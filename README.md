@@ -1,1 +1,458 @@
-# my-shooter-game
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>International Shooter – 10 Levels</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#1a1d29; --ink:#e6ebff; --accent:#00e0ff; --danger:#ff6262; --gold:#ffd54a; --door:#7cff6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1000px 600px at 50% 10%, #1f2550 0%, var(--bg) 65%); color:var(--ink); font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; text-align:center;}
+  h1{margin:16px 0 8px}
+  .wrap{width:min(980px,94vw); margin:0 auto; padding:8px 0 20px}
+  .panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.2)); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:14px; box-shadow:0 10px 40px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.02)}
+  #gameCanvas{background:#121526; width:100%; height:auto; border-radius:12px; outline:2px solid rgba(255,255,255,.08)}
+  .hud{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0}
+  .pill{background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:6px 12px; font-size:14px}
+  .btn{background:linear-gradient(180deg,var(--accent),#0079ff); color:#001423; border:none; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer}
+  .btn.alt{background:linear-gradient(180deg,#8dffa1,#00d27a); color:#061d0e}
+  .btn.ghost{background:transparent; color:var(--ink); border:1px solid rgba(255,255,255,.25)}
+  dialog{border:1px solid rgba(255,255,255,.14); background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.5)); color:var(--ink); border-radius:14px; padding:18px; box-shadow:0 20px 70px rgba(0,0,0,.6); width:min(520px,92vw)}
+  dialog::backdrop{background:rgba(8,10,22,.6); backdrop-filter:blur(3px)}
+  .row{display:flex; gap:10px; margin:8px 0}
+  input[type="text"]{flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.25); color:var(--ink)}
+  .legend{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; font-size:12px; opacity:.9}
+  .tag{padding:3px 8px; border-radius:8px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🔫 International Shooter – 10 Levels</h1>
+    <div class="panel">
+      <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+      <div class="hud">
+        <div class="pill"><strong id="nameLabel">Player</strong></div>
+        <div class="pill">Level: <span id="levelLabel">1</span></div>
+        <div class="pill">HP: <span id="hpLabel">100</span></div>
+        <div class="pill">🔑 Key: <span id="keyLabel">No</span></div>
+        <div class="pill">🧨 Grenade (G): <span id="grenadeLabel">2</span></div>
+        <div class="pill">Enemies: <span id="enemyCount">0</span></div>
+      </div>
+
+      <div class="legend">
+        <span class="tag">W/A/S/D atau Arrow = Gerak</span>
+        <span class="tag">Space = Tembak</span>
+        <span class="tag">G = Granate (-50% HP musuh, max 2x tiap level)</span>
+        <span class="tag">Ambil <b>KEY</b> → masuk <b>DOOR</b> untuk lanjut level</span>
+        <span class="tag">Kotak bertuliskan <b>BOX</b> adalah rintangan</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MENUS -->
+  <dialog id="menuDlg">
+    <h2>Mulai Petualangan</h2>
+    <div class="row">
+      <input id="nameInput" type="text" placeholder="Namamu"/>
+    </div>
+    <div class="row" style="justify-content:center">
+      <button class="btn" id="newBtn">Mulai Baru</button>
+      <button class="btn alt" id="contBtn">Lanjutkan</button>
+    </div>
+    <div class="row" style="justify-content:center">
+      <button class="btn ghost" id="resetBtn">Reset Progress</button>
+    </div>
+    <small>Progress level tersimpan otomatis di browser-mu.</small>
+    <hr>
+    <h3>Cara Bermain</h3>
+    <ul style="text-align:left; margin:0">
+      <li>Gerak dengan WASD/Arrow. Tembak dengan Space.</li>
+      <li>Ambil <b>KEY</b> (kuning) lalu masuk <b>DOOR</b> (hijau) untuk naik level.</li>
+      <li>Gunakan <b>Granate (G)</b> maksimal 2x per level untuk mengurangi HP setiap <b>ENEMY</b> sebesar 50%.</li>
+      <li>Hindari peluru musuh (oranye). Musuh akan menembak ke arahmu.</li>
+      <li>BOX adalah dinding/rintangan—tidak bisa ditembus.</li>
+    </ul>
+  </dialog>
+
+  <dialog id="winDlg">
+    <h2>🏆 Kamu Menang!</h2>
+    <p>Kamu menaklukkan semua 10 level. Keren!</p>
+    <div class="row" style="justify-content:center">
+      <button class="btn" id="playAgain">Main Lagi dari Level 1</button>
+    </div>
+  </dialog>
+
+<script>
+/* ===== Canvas & UI ===== */
+const cnv = document.getElementById('gameCanvas');
+const ctx = cnv.getContext('2d');
+const UI = {
+  nameLabel: document.getElementById('nameLabel'),
+  levelLabel: document.getElementById('levelLabel'),
+  hpLabel: document.getElementById('hpLabel'),
+  keyLabel: document.getElementById('keyLabel'),
+  grenadeLabel: document.getElementById('grenadeLabel'),
+  enemyCount: document.getElementById('enemyCount'),
+  menuDlg: document.getElementById('menuDlg'),
+  winDlg: document.getElementById('winDlg'),
+  nameInput: document.getElementById('nameInput'),
+  newBtn: document.getElementById('newBtn'),
+  contBtn: document.getElementById('contBtn'),
+  resetBtn: document.getElementById('resetBtn'),
+  playAgain: document.getElementById('playAgain')
+};
+
+/* ===== Persistent ===== */
+let playerName = localStorage.getItem('playerName') || 'Player';
+let savedLevel = parseInt(localStorage.getItem('savedLevel') || '1', 10);
+UI.nameInput.value = playerName;
+
+/* ===== Game State ===== */
+const KEYS = {};
+addEventListener('keydown', e => { KEYS[e.key.toLowerCase()] = true; if(e.key===' ') e.preventDefault(); });
+addEventListener('keyup',   e => { KEYS[e.key.toLowerCase()] = false; });
+
+const CONFIG = {
+  player: { w:28, h:28, speed:3.0, maxHP:100, fireCD:200 },
+  bullet: { speed:7, size:6 },
+  enemy:  { w:26, h:26, speed:1.2, hpBase:60, bulletSpeed:4.6, fireCD:[900, 1600] },
+  grenadePerLevel: 2,
+};
+
+let state = {
+  running:false,
+  level:1,
+  hasKey:false,
+  grenades:CONFIG.grenadePerLevel
+};
+
+let player, enemies=[], playerBullets=[], enemyBullets=[], boxes=[], keyItem, door;
+
+/* ===== Helpers ===== */
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand  = (a,b)=>a + Math.random()*(b-a);
+const now   = ()=>performance.now();
+
+function rectOverlap(a,b){
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/* ===== Entities ===== */
+class Entity{ constructor(x,y,w,h){Object.assign(this,{x,y,w,h,vx:0,vy:0});} rect(){return {x:this.x,y:this.y,w:this.w,h:this.h};} }
+
+class Player extends Entity{
+  constructor(x,y){ super(x,y,CONFIG.player.w,CONFIG.player.h); this.hp=CONFIG.player.maxHP; this.lastShot=0; }
+  update(dt){
+    let dx = (KEYS['d']||KEYS['arrowright']?1:0) - (KEYS['a']||KEYS['arrowleft']?1:0);
+    let dy = (KEYS['s']||KEYS['arrowdown']?1:0) - (KEYS['w']||KEYS['arrowup']?1:0);
+    this.x += dx * CONFIG.player.speed;
+    this.y += dy * CONFIG.player.speed;
+    // clamp & collide boxes
+    this.x = clamp(this.x, 0, cnv.width - this.w);
+    this.y = clamp(this.y, 0, cnv.height - this.h);
+    collideBoxes(this);
+    // shoot
+    if(KEYS[' '] && now()-this.lastShot > CONFIG.player.fireCD){
+      this.lastShot = now();
+      playerBullets.push(new Bullet(this.x+this.w, this.y+this.h/2, CONFIG.bullet.speed, 0, 'player'));
+    }
+    // grenade
+    if(KEYS['g']){ KEYS['g']=false; useGrenade(); }
+  }
+}
+
+class Enemy extends Entity{
+  constructor(x,y,hp,patrol=null){
+    super(x,y,CONFIG.enemy.w,CONFIG.enemy.h);
+    this.hp = hp;
+    this.patrol = patrol;
+    this.patrolIndex = 0;
+    this.lastShot = now() - rand(0,800);
+    this.cooldown = rand(...CONFIG.enemy.fireCD);
+  }
+  update(dt){
+    // Patrol simple
+    if(this.patrol && this.patrol.length>1){
+      const t = this.patrol[this.patrolIndex];
+      const dx = t.x - this.x, dy = t.y - this.y;
+      const d = Math.hypot(dx,dy) || 1;
+      if(d>1.5){ this.x += (dx/d)*CONFIG.enemy.speed; this.y += (dy/d)*CONFIG.enemy.speed; }
+      else { this.patrolIndex = (this.patrolIndex+1)%this.patrol.length; }
+      collideBoxes(this);
+    }
+    // Shoot ke arah player
+    if(now() - this.lastShot > this.cooldown){
+      this.lastShot = now(); this.cooldown = rand(...CONFIG.enemy.fireCD);
+      const cx = this.x + this.w/2, cy = this.y + this.h/2;
+      const px = player.x + player.w/2, py = player.y + player.h/2;
+      const dx = px - cx, dy = py - cy, d = Math.hypot(dx,dy) || 1;
+      const vx = (dx/d) * CONFIG.enemy.bulletSpeed;
+      const vy = (dy/d) * CONFIG.enemy.bulletSpeed;
+      enemyBullets.push(new Bullet(cx, cy, vx, vy, 'enemy'));
+    }
+  }
+}
+
+class Bullet{
+  constructor(x,y,vx,vy,from){Object.assign(this,{x,y,vx,vy,from,size:CONFIG.bullet.size,alive:true});}
+  rect(){ return {x:this.x-this.size/2, y:this.y-this.size/2, w:this.size, h:this.size}; }
+  update(){ this.x += this.vx; this.y += this.vy; if(this.x<-20||this.x>cnv.width+20||this.y<-20||this.y>cnv.height+20) this.alive=false; }
+}
+
+/* ===== Collision with boxes (push back) ===== */
+function collideBoxes(ent){
+  for(const b of boxes){
+    const r1 = ent.rect(); const r2 = b;
+    if(rectOverlap(r1,r2)){
+      const dx1 = r2.x + r2.w - r1.x; // from left
+      const dx2 = r1.x + r1.w - r2.x; // from right
+      const dy1 = r2.y + r2.h - r1.y; // from top
+      const dy2 = r1.y + r1.h - r2.y; // from bottom
+      const minX = Math.min(dx1,dx2), minY = Math.min(dy1,dy2);
+      if(minX < minY){ // resolve x
+        if(dx1 < dx2) ent.x = r2.x + r2.w;
+        else ent.x = r2.x - ent.w;
+      }else{ // resolve y
+        if(dy1 < dy2) ent.y = r2.y + r2.h;
+        else ent.y = r2.y - ent.h;
+      }
+    }
+  }
+}
+
+/* ===== Level Generator (10 levels) ===== */
+function levelSpec(n){
+  // Difficulty scales with level
+  const enemyCount = Math.min(2 + Math.floor((n-1)/1), 8);
+  const hp = CONFIG.enemy.hpBase + (n-1)*10;
+  // Boxes grid-ish
+  const bx = [];
+  for(let i=0;i<Math.min(3 + Math.floor(n/2), 8);i++){
+    bx.push({x: 120 + (i*90)%800, y: 80 + ((i*140)%420), w: 50, h: 50});
+  }
+  // Enemies positioned near right
+  const ens = [];
+  for(let i=0;i<enemyCount;i++){
+    const ex = 520 + (i*60)%360;
+    const ey = 80 + (i*70)%420;
+    // small patrol horizontally
+    ens.push(new Enemy(ex, ey, hp, [{x:ex-30,y:ey},{x:ex+30,y:ey}]));
+  }
+  // Key & Door vary per level
+  const key = {x: 120 + (n*73)% (cnv.width-160), y: 80 + (n*91)% (cnv.height-120), w:20, h:20, taken:false};
+  const door = {x: cnv.width-70, y: 60 + (n*37)% (cnv.height-120), w:32, h:72};
+  const spawn = {x: 40 + (n%2)*40, y: cnv.height-90};
+  return {boxes:bx, enemies:ens, key, door, spawn};
+}
+
+function loadLevel(n){
+  state.level = n;
+  state.hasKey = false;
+  state.grenades = CONFIG.grenadePerLevel;
+  playerBullets = []; enemyBullets = [];
+  const spec = levelSpec(n);
+  boxes = spec.boxes;
+  enemies = spec.enemies;
+  keyItem = spec.key;
+  door = spec.door;
+  player = new Player(spec.spawn.x, spec.spawn.y);
+  updateUI();
+  localStorage.setItem('savedLevel', String(n));
+}
+
+/* ===== UI ===== */
+function updateUI(){
+  UI.nameLabel.textContent = playerName;
+  UI.levelLabel.textContent = state.level;
+  UI.hpLabel.textContent = Math.max(0, Math.round(player.hp));
+  UI.keyLabel.textContent = state.hasKey ? 'Yes' : 'No';
+  UI.grenadeLabel.textContent = state.grenades;
+  UI.enemyCount.textContent = enemies.length;
+}
+
+/* ===== Gameplay ===== */
+function useGrenade(){
+  if(state.grenades <= 0) return;
+  if(enemies.length === 0) return;
+  state.grenades--;
+  enemies.forEach(e => { e.hp = Math.ceil(e.hp * 0.5); });
+  enemies = enemies.filter(e=>e.hp>0);
+  updateUI();
+}
+
+function nextLevel(){
+  if(state.level >= 10){
+    // Win!
+    state.running = false;
+    localStorage.setItem('savedLevel','10');
+    UI.winDlg.showModal();
+    return;
+  }
+  loadLevel(state.level + 1);
+}
+
+function resetProgress(){
+  localStorage.removeItem('savedLevel');
+  localStorage.removeItem('playerName');
+  savedLevel = 1; playerName = 'Player';
+}
+
+/* ===== Main Loop ===== */
+function update(){
+  if(!state.running) return;
+  player.update();
+
+  // Bullets
+  playerBullets.forEach(b=>b.update());
+  enemyBullets.forEach(b=>b.update());
+  playerBullets = playerBullets.filter(b=>b.alive);
+  enemyBullets = enemyBullets.filter(b=>b.alive);
+
+  // Collisions: player bullets -> enemies
+  for(const b of playerBullets){
+    const rb = b.rect();
+    for(const e of enemies){
+      if(rectOverlap({x:rb.x,y:rb.y,w:rb.w,h:rb.h}, e.rect())){
+        b.alive=false;
+        e.hp -= 20;
+      }
+    }
+  }
+  enemies = enemies.filter(e=>e.hp>0);
+
+  // Collisions: enemy bullets -> player
+  for(const b of enemyBullets){
+    const rb = b.rect();
+    if(rectOverlap({x:rb.x,y:rb.y,w:rb.w,h:rb.h}, player.rect())){
+      b.alive=false;
+      player.hp -= 12;
+    }
+  }
+
+  // Enemy AI update
+  enemies.forEach(e=>e.update());
+
+  // Pick up key
+  if(!keyItem.taken && rectOverlap(player.rect(), keyItem)){
+    keyItem.taken = true;
+    state.hasKey = true;
+  }
+
+  // Enter door if has key
+  if(state.hasKey && rectOverlap(player.rect(), door)){
+    nextLevel();
+  }
+
+  // Death
+  if(player.hp <= 0){
+    // Restart current level
+    loadLevel(state.level);
+  }
+
+  updateUI();
+}
+
+function draw(){
+  ctx.clearRect(0,0,cnv.width,cnv.height);
+
+  // Boxes
+  for(const b of boxes){
+    ctx.fillStyle = '#5b6aa6';
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('BOX', b.x+10, b.y + b.h/2 + 4);
+  }
+
+  // Key
+  if(!keyItem.taken){
+    ctx.fillStyle = '#ffd54a';
+    ctx.fillRect(keyItem.x, keyItem.y, keyItem.w, keyItem.h);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('KEY', keyItem.x-2, keyItem.y-6);
+  }
+
+  // Door
+  ctx.fillStyle = '#38f58e';
+  ctx.fillRect(door.x, door.y, door.w, door.h);
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('DOOR', door.x-4, door.y-6);
+
+  // Player
+  ctx.fillStyle = '#00e0ff';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(`${playerName} HP:${Math.max(0,Math.round(player.hp))}`, player.x-6, player.y-8);
+
+  // Enemies
+  enemies.forEach(e=>{
+    ctx.fillStyle = '#ff5b5b';
+    ctx.fillRect(e.x, e.y, e.w, e.h);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(`ENEMY HP:${e.hp}`, e.x-6, e.y-8);
+  });
+
+  // Bullets
+  ctx.fillStyle = '#ffe66d';
+  playerBullets.forEach(b=>{
+    const s = b.size;
+    ctx.fillRect(b.x - s/2, b.y - s/2, s, s);
+  });
+  ctx.fillStyle = '#ffa54a';
+  enemyBullets.forEach(b=>{
+    const s = b.size;
+    ctx.fillRect(b.x - s/2, b.y - s/2, s, s);
+  });
+}
+
+function loop(){
+  update();
+  draw();
+  if(state.running) requestAnimationFrame(loop);
+}
+
+/* ===== Menu Buttons ===== */
+UI.newBtn.onclick = ()=>{
+  playerName = UI.nameInput.value.trim() || 'Player';
+  localStorage.setItem('playerName', playerName);
+  state.running = true;
+  loadLevel(1);
+  UI.menuDlg.close();
+  loop();
+};
+UI.contBtn.onclick = ()=>{
+  playerName = UI.nameInput.value.trim() || localStorage.getItem('playerName') || 'Player';
+  localStorage.setItem('playerName', playerName);
+  const lvl = parseInt(localStorage.getItem('savedLevel')||'1',10);
+  state.running = true;
+  loadLevel(lvl);
+  UI.menuDlg.close();
+  loop();
+};
+UI.resetBtn.onclick = ()=>{
+  resetProgress();
+  alert('Progress direset.');
+};
+UI.playAgain.onclick = ()=>{
+  UI.winDlg.close();
+  state.running = true;
+  loadLevel(1);
+  loop();
+};
+
+/* ===== Start ===== */
+function openMenuFirstTime(){
+  UI.nameLabel.textContent = playerName;
+  UI.menuDlg.showModal();
+}
+openMenuFirstTime();
+</script>
+</body>
+</html>
